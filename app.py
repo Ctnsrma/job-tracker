@@ -1,18 +1,25 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from dotenv import load_dotenv
+from flask_login import login_user, logout_user, login_required, current_user
 
 load_dotenv()                  
 
 from config import Config
-from extensions import db
+from extensions import db, login_manager
 from flask_migrate import Migrate
-from models import JobApplication
+from models import JobApplication, User 
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
 db.init_app(app)
 migrate = Migrate(app, db)
+login_manager.init_app(app)
+login_manager.login_view = "login"
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 @app.route("/")
 def home():
@@ -61,6 +68,51 @@ def delete_application(app_id):
     db.session.commit()
     flash("Application deleted.", "success")
     return redirect(url_for("home"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.check_password(password):
+            login_user(user)
+            flash("Logged in successfully!", "success")
+            return redirect(url_for("home"))
+        else:
+            flash("Invalid username or password.", "danger")
+
+    return render_template("login.html")
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("Logged out.", "success")
+    return redirect(url_for("login"))
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if User.query.first():
+        flash("Registration is closed.", "danger")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        user = User(username=username)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+
+        flash("Account created! Please log in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
 
 if __name__ == "__main__":
     app.run(debug=app.config["DEBUG"])
